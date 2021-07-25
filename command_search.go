@@ -23,6 +23,7 @@ var CommandSearch = cli.Command{
 			Name:      "file",
 			Usage:     "path to tacview files you'd like to search",
 			TakesFile: true,
+			Required:  true,
 		},
 		&cli.StringSliceFlag{
 			Name:  "property",
@@ -61,7 +62,7 @@ func commandSearch(ctx *cli.Context) error {
 	for _, filePath := range ctx.StringSlice("file") {
 		fmt.Fprintf(os.Stderr, "Processing file %v...\n", filePath)
 
-		file, err := os.Open(filePath)
+		file, err := openReadableTacView(filePath)
 		if err != nil {
 			return err
 		}

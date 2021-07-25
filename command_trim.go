@@ -53,7 +53,7 @@ var CommandTrim = cli.Command{
 }
 
 func commandTrim(ctx *cli.Context) error {
-	inputFile, err := os.Open(ctx.Path("input"))
+	inputFile, err := openReadableTacView(ctx.Path("input"))
 	if err != nil {
 		return err
 	}
