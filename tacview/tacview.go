@@ -43,6 +43,7 @@ func splitPropertyTokens(s string) (tokens []string, err error) {
 	return tokens, err
 }
 
+// Header describes a ACMI file header
 type Header struct {
 	FileType         string
 	FileVersion      string
@@ -50,38 +51,45 @@ type Header struct {
 	InitialTimeFrame TimeFrame
 }
 
+// Reader provides an interface for reading an ACMI file
 type Reader struct {
 	Header Header
 	reader *bufio.Reader
 }
 
+// Writer provides an interface for writing an ACMI file
 type Writer struct {
 	writer *bufio.Writer
 	closer io.Closer
 }
 
+// TimeFrame represents a single time frame from an ACMI file
 type TimeFrame struct {
 	Offset  float64
 	Objects []*Object
 }
 
+// Property represents an object property
 type Property struct {
 	Key   string
 	Value string
 }
 
+// Object describes an ACMI object
 type Object struct {
 	Id         uint64
 	Properties []*Property
 	Deleted    bool
 }
 
+// NewTimeFrame creates an empty TimeFrame
 func NewTimeFrame() *TimeFrame {
 	return &TimeFrame{
 		Objects: make([]*Object, 0),
 	}
 }
 
+// NewWriter creates a new ACMI writer
 func NewWriter(writer io.WriteCloser, header *Header) (*Writer, error) {
 	w := &Writer{
 		writer: bufio.NewWriter(writer),
@@ -90,12 +98,14 @@ func NewWriter(writer io.WriteCloser, header *Header) (*Writer, error) {
 	return w, w.writeHeader(header)
 }
 
+// NewReader creates a new ACMI reader
 func NewReader(reader io.Reader) (*Reader, error) {
 	r := &Reader{reader: bufio.NewReader(bom.NewReader(reader))}
 	err := r.readHeader()
 	return r, err
 }
 
+// Close closes the writer, flushing any remaining contents
 func (w *Writer) Close() error {
 	err := w.writer.Flush()
 	if err != nil {
@@ -113,6 +123,7 @@ func (w *Writer) writeHeader(header *Header) error {
 	return header.Write(w.writer)
 }
 
+// WriteTimeFrame writes a time frame
 func (w *Writer) WriteTimeFrame(tf *TimeFrame) error {
 	return tf.Write(w.writer, true)
 }
@@ -128,6 +139,7 @@ func (h *Header) Write(writer *bufio.Writer) error {
 	return writer.Flush()
 }
 
+// Get returns an object (if one exists) for a given object id
 func (tf *TimeFrame) Get(id uint64) *Object {
 	for _, object := range tf.Objects {
 		if object.Id == id {
@@ -152,6 +164,7 @@ func (tf *TimeFrame) Write(writer *bufio.Writer, includeOffset bool) error {
 	return nil
 }
 
+// Set updates the given property
 func (o *Object) Set(key string, value string) {
 	for _, property := range o.Properties {
 		if property.Key == key {
@@ -162,6 +175,7 @@ func (o *Object) Set(key string, value string) {
 	o.Properties = append(o.Properties, &Property{Key: key, Value: value})
 }
 
+// Get returns a property (if one exists) for a given key
 func (o *Object) Get(key string) *Property {
 	for _, property := range o.Properties {
 		if property.Key == key {
@@ -223,11 +237,15 @@ func (r *Reader) parseObject(object *Object, data string) error {
 	return nil
 }
 
-func (r *Reader) ProcessTimeFrames(processes int, timeFrame chan<- *TimeFrame) error {
+// ProcessTimeFrames concurrently processes time frames from within the ACMI file,
+//  producing them to an output channel. If your use case requires strong ordering
+//  and you do not wish to implement this guarantee on the consumer side, you must
+//  set the concurrency to 1.
+func (r *Reader) ProcessTimeFrames(concurrency int, timeFrame chan<- *TimeFrame) error {
 	bufferChan := make(chan []byte)
 
 	var wg sync.WaitGroup
-	for i := 0; i < processes; i++ {
+	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -252,7 +270,7 @@ func (r *Reader) ProcessTimeFrames(processes int, timeFrame chan<- *TimeFrame) e
 	}
 
 	err := r.timeFrameProducer(bufferChan)
-	for i := 0; i < processes; i++ {
+	for i := 0; i < concurrency; i++ {
 		bufferChan <- nil
 	}
 

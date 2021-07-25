@@ -7,7 +7,7 @@ jambon is a small utility designed to help process large tacview (ACMI) files in
 We can search by any object property and jambon will produce time frames for all relevant objects.
 
 ```bash
-$ go run cmd/jambon/main.go search --property "Pilot=Tracer 1-1 | Apothecary" --file example.acmi
+$ jambon search --property "Pilot=Tracer 1-1 | Apothecary" --file example.acmi
 Processing file test.acmi...
 Object 2051
   First Seen: 2021-07-24T04:00:47Z (47.18)
@@ -29,7 +29,7 @@ Object 578051
 Or perhaps you prefer structured data:
 
 ```bash
-$ go run cmd/jambon/main.go search --property "Pilot=Tracer 1-1 | Apothecary" --file example.acmi --json | jq '.'
+$ jambon search --property "Pilot=Tracer 1-1 | Apothecary" --file example.acmi --json | jq '.'
 [
   {
     "object": {
@@ -82,7 +82,7 @@ $ go run cmd/jambon/main.go search --property "Pilot=Tracer 1-1 | Apothecary" --
 Once we have a time frame we can utilize the trim functionality to produce a much smaller ACMI file.
 
 ```
-$ go run cmd/jambon/main.go trim --input before.acmi --start-at-offset-time 3279.72 --end-at-offset-time 5521.57 --output after.acmi
+$ jambon trim --input before.acmi --start-at-offset-time 3279.72 --end-at-offset-time 5521.57 --output after.acmi
 Collecting frames between 3279.72 and 5521.57...
 Sorting 47240 collected frames...
 Writing 47240 frames...

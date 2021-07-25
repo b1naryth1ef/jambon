@@ -12,6 +12,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// CommandTrim handles trimming a tacview fiel
 var CommandTrim = cli.Command{
 	Name:        "trim",
 	Description: "trim a tacview to reduce its duration",
@@ -42,6 +43,11 @@ var CommandTrim = cli.Command{
 		&cli.StringFlag{
 			Name:  "end-at-time",
 			Usage: "set the end point via a RFC3999 timestamp",
+		},
+		&cli.IntFlag{
+			Name:  "concurrency",
+			Usage: "number of parallel processing routines to run",
+			Value: runtime.GOMAXPROCS(-1),
 		},
 	},
 }
@@ -87,10 +93,10 @@ func commandTrim(ctx *cli.Context) error {
 		end = endTime.Sub(reader.Header.ReferenceTime).Seconds()
 	}
 
-	return trimTimeFrame(reader, outputFile, start, end)
+	return trimTimeFrame(ctx.Int("concurrency"), reader, outputFile, start, end)
 }
 
-func trimTimeFrame(reader *tacview.Reader, dest io.WriteCloser, start float64, end float64) error {
+func trimTimeFrame(concurrency int, reader *tacview.Reader, dest io.WriteCloser, start float64, end float64) error {
 	done := make(chan struct{})
 	timeFrames := make(chan *tacview.TimeFrame)
 
@@ -115,6 +121,8 @@ func trimTimeFrame(reader *tacview.Reader, dest io.WriteCloser, start float64, e
 					if existingObject == nil {
 						objects[object.Id] = object
 						continue
+					} else if object.Deleted {
+						delete(objects, object.Id)
 					}
 
 					for _, newProp := range object.Properties {
@@ -130,7 +138,7 @@ func trimTimeFrame(reader *tacview.Reader, dest io.WriteCloser, start float64, e
 	}()
 
 	fmt.Printf("Collecting frames between %v and %v...\n", start, end)
-	err := reader.ProcessTimeFrames(runtime.GOMAXPROCS(-1), timeFrames)
+	err := reader.ProcessTimeFrames(concurrency, timeFrames)
 	if err != nil {
 		return err
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// CommandSearch handles searching a tacview for objects with a given set of properties
 var CommandSearch = cli.Command{
 	Name:        "search",
 	Description: "search for an object",
@@ -35,12 +36,16 @@ var CommandSearch = cli.Command{
 			Name:  "json",
 			Usage: "output data as JSON",
 		},
+		&cli.IntFlag{
+			Name:  "concurrency",
+			Usage: "number of parallel processing routines to run",
+			Value: runtime.GOMAXPROCS(-1),
+		},
 	},
 }
 
 func commandSearch(ctx *cli.Context) error {
 	properties := make(map[string]string)
-
 	for _, property := range ctx.StringSlice("property") {
 		parts := strings.SplitN(property, "=", 2)
 		if len(parts) != 2 {
@@ -54,7 +59,7 @@ func commandSearch(ctx *cli.Context) error {
 	}
 
 	for _, filePath := range ctx.StringSlice("file") {
-		// fmt.Fprintf(os.Stderr, "Processing file %v...\n", filePath)
+		fmt.Fprintf(os.Stderr, "Processing file %v...\n", filePath)
 
 		file, err := os.Open(filePath)
 		if err != nil {
@@ -66,7 +71,7 @@ func commandSearch(ctx *cli.Context) error {
 			return err
 		}
 
-		results, err := search(reader, properties)
+		results, err := search(ctx.Int("concurrency"), reader, properties)
 		if err != nil {
 			return err
 		}
@@ -113,13 +118,7 @@ type searchResult struct {
 	LastSeen  float64         `json:"last_seen"`
 }
 
-func search(reader *tacview.Reader, properties map[string]string) ([]*searchResult, error) {
-	output, err := os.Create("out.acmi")
-	if err != nil {
-		return nil, err
-	}
-	defer output.Close()
-
+func search(concurrency int, reader *tacview.Reader, properties map[string]string) ([]*searchResult, error) {
 	done := make(chan struct{})
 	timeFrames := make(chan *tacview.TimeFrame)
 
@@ -162,7 +161,7 @@ func search(reader *tacview.Reader, properties map[string]string) ([]*searchResu
 		}
 	}()
 
-	err = reader.ProcessTimeFrames(runtime.GOMAXPROCS(-1), timeFrames)
+	err := reader.ProcessTimeFrames(concurrency, timeFrames)
 	if err != nil {
 		return nil, err
 	}
