@@ -11,11 +11,11 @@ export async function build(ws: Workspace, { os, arch, version }: { os?: string;
   });
 
   if (version !== undefined) {
-    await res.copy("/tacview");
+    await res.copy("/jambon");
    
     pushStep("Upload Jambon Binary");
-    const uploadRes = await uploadArtifact("tacview", {
-      name: "tacview",
+    const uploadRes = await uploadArtifact("jambon", {
+      name: "jambon",
       published: true,
       labels: [
         "jambon",
