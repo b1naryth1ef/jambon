@@ -15,7 +15,7 @@ export async function build(ws: Workspace, { os, arch, version }: { os?: string;
    
     pushStep("Upload Jambon Binary");
     const uploadRes = await uploadArtifact("jambon", {
-      name: "jambon",
+      name: `jambon-${os}-${arch}-${version}`,
       published: true,
       labels: [
         "jambon",
