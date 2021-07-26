@@ -15,6 +15,7 @@ func main() {
 		Commands: []*cli.Command{
 			&jambon.CommandSearch,
 			&jambon.CommandTrim,
+			&jambon.CommandNormalize,
 		},
 	}
 

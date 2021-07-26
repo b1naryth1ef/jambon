@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -29,6 +30,40 @@ func openReadableTacView(path string) (io.ReadCloser, error) {
 		}
 
 		return reader.Open(reader.File[0].Name)
+	}
+
+	return file, nil
+}
+
+// Wraps a zip writer with an unrelated closer
+type zipWriteCloser struct {
+	io.Writer
+	file io.Closer
+}
+
+func (z *zipWriteCloser) Close() error {
+	return z.file.Close()
+}
+
+func openWritableTacView(path string) (io.WriteCloser, error) {
+	file, err := os.Create(path)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.HasSuffix(path, ".zip.acmi") {
+		writer := zip.NewWriter(file)
+
+		name := filepath.Base(path)
+		name = name[0:len(name)-len(".zip.acmi")] + ".txt.acmi"
+
+		zipFileWriter, err := writer.Create(name)
+		if err != nil {
+			return nil, err
+		}
+
+		return &zipWriteCloser{zipFileWriter, writer}, nil
 	}
 
 	return file, nil

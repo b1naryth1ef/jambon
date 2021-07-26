@@ -1,6 +1,10 @@
 # jambon - tacview / acmi file processing utility
 
-jambon is a small utility designed to help process large tacview (ACMI) files into small usable chunks. It includes CLI tools for searching objects within a tacview, determining object life span, and trimming tacviews to a specific time frame.
+jambon is a small utility designed to help process large tacview (ACMI). It includes CLI tools for searching objects within a tacview, determining object life span, trimming tacviews to specific time frames, and filtering out objects.
+
+### Performance
+
+jambon allows the user to optimize for speed or reduced memory usage when running ACMI processing commands. Commands that read ACMI files have a `--concurrency` flag which determines the number of data-processing routines that will be started. Generally speaking if a command outputs an ACMI file, a `--concurrency` of 1 will provide a consistent and small memory usage pattern. A larger concurrency value obviously results in less time processing but will require much more memory as data is buffered between stages.
 
 ## Searching
 

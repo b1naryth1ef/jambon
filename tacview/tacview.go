@@ -149,6 +149,16 @@ func (tf *TimeFrame) Get(id uint64) *Object {
 	return nil
 }
 
+// Delete removes an object (if one exists) for a given object id
+func (tf *TimeFrame) Delete(id uint64) {
+	for idx, object := range tf.Objects {
+		if object.Id == id {
+			tf.Objects = append(tf.Objects[:idx], tf.Objects[idx+1:]...)
+			break
+		}
+	}
+}
+
 func (tf *TimeFrame) Write(writer *bufio.Writer, includeOffset bool) error {
 	if includeOffset {
 		_, err := writer.WriteString(fmt.Sprintf("#%F\n", tf.Offset))

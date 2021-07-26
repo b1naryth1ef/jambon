@@ -3,7 +3,6 @@ package jambon
 import (
 	"fmt"
 	"io"
-	"os"
 	"runtime"
 	"sort"
 	"time"
@@ -12,7 +11,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// CommandTrim handles trimming a tacview fiel
+// CommandTrim handles trimming a tacview file
 var CommandTrim = cli.Command{
 	Name:        "trim",
 	Description: "trim a tacview to reduce its duration",
@@ -58,7 +57,7 @@ func commandTrim(ctx *cli.Context) error {
 		return err
 	}
 
-	outputFile, err := os.Create(ctx.Path("output"))
+	outputFile, err := openWritableTacView(ctx.Path("output"))
 	if err != nil {
 		return err
 	}
@@ -97,72 +96,66 @@ func commandTrim(ctx *cli.Context) error {
 }
 
 func trimTimeFrame(concurrency int, reader *tacview.Reader, dest io.WriteCloser, start float64, end float64) error {
-	done := make(chan struct{})
+	readerDone := make(chan error)
+	done := make(chan error)
 	timeFrames := make(chan *tacview.TimeFrame)
 
-	objects := make(map[uint64]*tacview.Object)
-
-	collected := make([]*tacview.TimeFrame, 0)
-
 	go func() {
-		defer close(done)
-
-		for {
-			tf, ok := <-timeFrames
-
-			if !ok {
-				return
-			}
-
-			if tf.Offset < start {
-				for _, object := range tf.Objects {
-					existingObject := objects[object.Id]
-
-					if existingObject == nil {
-						objects[object.Id] = object
-						continue
-					} else if object.Deleted {
-						delete(objects, object.Id)
-					}
-
-					for _, newProp := range object.Properties {
-						existingObject.Set(newProp.Key, newProp.Value)
-					}
-				}
-			}
-
-			if tf.Offset >= start && tf.Offset <= end {
-				collected = append(collected, tf)
-			}
+		defer close(readerDone)
+		err := reader.ProcessTimeFrames(concurrency, timeFrames)
+		if err != nil {
+			readerDone <- err
 		}
 	}()
 
-	fmt.Printf("Collecting frames between %v and %v...\n", start, end)
-	err := reader.ProcessTimeFrames(concurrency, timeFrames)
-	if err != nil {
-		return err
+	// Stores any objects which where created before the start of our time window,
+	// and have not yet been destroyed.
+	preStartObjects := make(map[uint64]*tacview.Object)
+	var firstTimeFrame *tacview.TimeFrame
+
+	fmt.Printf("Scanning to offset %f...\n", start)
+	for {
+		tf, ok := <-timeFrames
+		if !ok {
+			return io.EOF
+		}
+
+		if tf.Offset >= start {
+			firstTimeFrame = tf
+			break
+		}
+
+		for _, object := range tf.Objects {
+			existingObject := preStartObjects[object.Id]
+
+			if existingObject == nil {
+				preStartObjects[object.Id] = object
+				continue
+			} else if object.Deleted {
+				delete(preStartObjects, object.Id)
+			}
+
+			for _, newProp := range object.Properties {
+				existingObject.Set(newProp.Key, newProp.Value)
+			}
+		}
 	}
 
-	<-done
+	fmt.Printf("Collected %d active objects for frame 0\n", len(preStartObjects))
 
-	if len(collected) == 0 {
-		return fmt.Errorf("No collected frames, is your time range valid?")
-	}
+	referenceTime := reader.Header.ReferenceTime.Add(time.Second * time.Duration(start))
 
-	fmt.Printf("Sorting %v collected frames...\n", len(collected))
-	sort.Slice(collected, func(i, j int) bool {
-		return collected[i].Offset < collected[j].Offset
-	})
-
-	referenceTime := reader.Header.ReferenceTime.Add(time.Second * time.Duration(collected[0].Offset))
+	// We copy the initial time frame completely
 	initialTimeFrame := tacview.NewTimeFrame()
 	initialTimeFrame.Offset = 0
 	initialTimeFrame.Objects = reader.Header.InitialTimeFrame.Objects
 
-	firstTimeFrame := tacview.NewTimeFrame()
-	firstTimeFrame.Offset = 0
-	for _, object := range objects {
-		firstTimeFrame.Objects = append(firstTimeFrame.Objects, object)
+	// We generate a frame 0 that contains any objects which existed at the start
+	// point of our time window.
+	preTimeFrame := tacview.NewTimeFrame()
+	preTimeFrame.Offset = 0
+	for _, object := range preStartObjects {
+		preTimeFrame.Objects = append(firstTimeFrame.Objects, object)
 	}
 
 	header := &tacview.Header{
@@ -172,23 +165,74 @@ func trimTimeFrame(concurrency int, reader *tacview.Reader, dest io.WriteCloser,
 		InitialTimeFrame: *initialTimeFrame,
 	}
 
-	fmt.Printf("Writing %v frames...\n", len(collected))
 	writer, err := tacview.NewWriter(dest, header)
 	if err != nil {
 		return err
 	}
 	defer writer.Close()
 
+	err = writer.WriteTimeFrame(preTimeFrame)
+	if err != nil {
+		return err
+	}
+
 	err = writer.WriteTimeFrame(firstTimeFrame)
 	if err != nil {
 		return err
 	}
 
-	for _, tf := range collected {
-		tf.Offset = reader.Header.ReferenceTime.Add(time.Second * time.Duration(tf.Offset)).Sub(referenceTime).Seconds()
-		err = writer.WriteTimeFrame(tf)
-		if err != nil {
-			return err
+	collected := make([]*tacview.TimeFrame, 0)
+
+	go func() {
+		defer close(done)
+		defer close(readerDone)
+
+		for {
+			tf, ok := <-timeFrames
+
+			if !ok {
+				return
+			}
+
+			if tf.Offset >= end {
+				return
+			}
+
+			if concurrency == 1 {
+				err := writer.WriteTimeFrame(tf)
+				if err != nil {
+					done <- err
+					return
+				}
+			} else {
+				collected = append(collected, tf)
+			}
+		}
+	}()
+
+	err = <-done
+	if err != nil {
+		return err
+	}
+
+	err = <-readerDone
+	if err != nil {
+		return err
+	}
+
+	if concurrency != 1 {
+		fmt.Printf("Sorting %v collected frames...\n", len(collected))
+		sort.Slice(collected, func(i, j int) bool {
+			return collected[i].Offset < collected[j].Offset
+		})
+
+		fmt.Printf("Writing %v frames...\n", len(collected))
+		for _, tf := range collected {
+			tf.Offset = reader.Header.ReferenceTime.Add(time.Second * time.Duration(tf.Offset)).Sub(referenceTime).Seconds()
+			err = writer.WriteTimeFrame(tf)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
