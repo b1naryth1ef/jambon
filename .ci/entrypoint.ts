@@ -1,6 +1,11 @@
-import { Workspace, pushStep, spawnChildJob, print} from "runtime/core.ts";
+import { Workspace, pushStep, spawnChildJob, print } from "runtime/core.ts";
 import * as Docker from "pkg/buildy/docker@1/mod.ts";
 import { uploadArtifact } from "runtime/artifacts.ts";
+
+const PLATFORMS = [
+  {os: "linux", arch: "amd64"},
+  {os: "windows", arch: "amd64"},
+]
 
 export async function build(ws: Workspace, { os, arch, version }: { os?: string; arch?: string; version?: string }) {
   pushStep("Build Jambon Binary");
@@ -12,7 +17,7 @@ export async function build(ws: Workspace, { os, arch, version }: { os?: string;
 
   if (version !== undefined) {
     await res.copy("/jambon");
-   
+
     pushStep("Upload Jambon Binary");
     const uploadRes = await uploadArtifact("jambon", {
       name: `jambon-${os}-${arch}-${version}`,
@@ -35,14 +40,26 @@ export async function build(ws: Workspace, { os, arch, version }: { os?: string;
 
 }
 
+const semVerRe = /v([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+)?/;
+
 export async function githubPush(ws: Workspace) {
+  let version;
+
+  const versionTags = ws.commit.tags.filter((tag) => semVerRe.test(tag));
+  if (versionTags.length == 1) {
+    print(`Found version tag ${versionTags[0]}, will build release artifacts.`);
+    version = versionTags[0]
+  } else if (versionTags.length > 1) {
+    throw new Error(`Found too many version tags: ${versionTags}`);
+  }
+
   await spawnChildJob(".ci/entrypoint.ts:build", {
     alias: "Build Linux amd64",
-    args: {os: "linux", arch: "amd64"}
+    args: { os: "linux", arch: "amd64", version: version }
   })
-  
+
   await spawnChildJob(".ci/entrypoint.ts:build", {
     alias: "Build Windows amd64",
-    args: {os: "windows", arch: "amd64"}
+    args: { os: "windows", arch: "amd64", version: version }
   })
 }
