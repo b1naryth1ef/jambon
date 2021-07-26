@@ -3,7 +3,6 @@ package jambon
 import (
 	"fmt"
 	"io"
-	"log"
 	"runtime"
 	"sort"
 	"strings"
@@ -107,7 +106,6 @@ func normalize(concurrency int, input *tacview.Reader, output io.WriteCloser, fi
 			if !ok {
 				return
 			}
-			log.Printf("Processing frame %f", tf.Offset)
 
 			for _, object := range tf.Objects {
 				_, isFiltered := filteredObjects[object.Id]
@@ -145,14 +143,11 @@ func normalize(concurrency int, input *tacview.Reader, output io.WriteCloser, fi
 	}
 
 	if concurrency != 1 {
-		log.Printf("sorty")
 		sort.Slice(collected, func(i, j int) bool {
 			return collected[i].Offset < collected[j].Offset
 		})
 
-		log.Printf("writey")
 		for _, tf := range collected {
-			log.Printf("write %f", tf.Offset)
 			err = writer.WriteTimeFrame(tf)
 			if err != nil {
 				return err
