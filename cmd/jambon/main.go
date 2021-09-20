@@ -16,6 +16,7 @@ func main() {
 			&jambon.CommandSearch,
 			&jambon.CommandTrim,
 			&jambon.CommandNormalize,
+			&jambon.CommandRecord,
 		},
 	}
 
