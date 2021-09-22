@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/b1naryth1ef/jambon/acmi"
 	"github.com/b1naryth1ef/jambon/tacview"
 	"github.com/urfave/cli/v2"
 )
@@ -49,7 +50,7 @@ func commandNormalize(ctx *cli.Context) error {
 	for _, property := range ctx.StringSlice("exclude-property") {
 		parts := strings.SplitN(property, "=", 2)
 		if len(parts) != 2 {
-			return fmt.Errorf("Failed to process exclude property '%v'", property)
+			return fmt.Errorf("failed to process exclude property '%v'", property)
 		}
 		excludeProperties[parts[0]] = parts[1]
 	}
@@ -64,7 +65,7 @@ func commandNormalize(ctx *cli.Context) error {
 		return err
 	}
 
-	reader, err := tacview.NewReader(inputFile)
+	reader, err := acmi.NewReader(inputFile)
 	if err != nil {
 		return err
 	}
@@ -85,11 +86,11 @@ func commandNormalize(ctx *cli.Context) error {
 	})
 }
 
-func normalize(concurrency int, input *tacview.Reader, output io.WriteCloser, filter func(o *tacview.Object) bool) error {
+func normalize(concurrency int, input tacview.Reader, output io.WriteCloser, filter func(o *tacview.Object) bool) error {
 	done := make(chan error)
 	timeFrames := make(chan *tacview.TimeFrame)
 
-	writer, err := tacview.NewWriter(output, &input.Header)
+	writer, err := tacview.NewWriter(output, input.Header())
 	if err != nil {
 		return err
 	}

@@ -78,7 +78,7 @@ func commandTrim(ctx *cli.Context) error {
 			return err
 		}
 
-		start = startTime.Sub(reader.Header.ReferenceTime).Seconds()
+		start = startTime.Sub(reader.Header().ReferenceTime).Seconds()
 	}
 
 	if ctx.IsSet("end-at-offset-time") {
@@ -89,13 +89,13 @@ func commandTrim(ctx *cli.Context) error {
 			return err
 		}
 
-		end = endTime.Sub(reader.Header.ReferenceTime).Seconds()
+		end = endTime.Sub(reader.Header().ReferenceTime).Seconds()
 	}
 
 	return trimTimeFrame(ctx.Int("concurrency"), reader, outputFile, start, end)
 }
 
-func trimTimeFrame(concurrency int, reader *tacview.Reader, dest io.WriteCloser, start float64, end float64) error {
+func trimTimeFrame(concurrency int, reader tacview.Reader, dest io.WriteCloser, start float64, end float64) error {
 	readerDone := make(chan error)
 	done := make(chan error)
 	timeFrames := make(chan *tacview.TimeFrame)
@@ -143,12 +143,12 @@ func trimTimeFrame(concurrency int, reader *tacview.Reader, dest io.WriteCloser,
 
 	fmt.Printf("Collected %d active objects for frame 0\n", len(preStartObjects))
 
-	referenceTime := reader.Header.ReferenceTime.Add(time.Second * time.Duration(start))
+	referenceTime := reader.Header().ReferenceTime.Add(time.Second * time.Duration(start))
 
 	// We copy the initial time frame completely
 	initialTimeFrame := tacview.NewTimeFrame()
 	initialTimeFrame.Offset = 0
-	initialTimeFrame.Objects = reader.Header.InitialTimeFrame.Objects
+	initialTimeFrame.Objects = reader.Header().InitialTimeFrame.Objects
 
 	// We generate a frame 0 that contains any objects which existed at the start
 	// point of our time window.
@@ -159,8 +159,8 @@ func trimTimeFrame(concurrency int, reader *tacview.Reader, dest io.WriteCloser,
 	}
 
 	header := &tacview.Header{
-		FileType:         reader.Header.FileType,
-		FileVersion:      reader.Header.FileVersion,
+		FileType:         reader.Header().FileType,
+		FileVersion:      reader.Header().FileVersion,
 		ReferenceTime:    referenceTime,
 		InitialTimeFrame: *initialTimeFrame,
 	}
@@ -228,7 +228,7 @@ func trimTimeFrame(concurrency int, reader *tacview.Reader, dest io.WriteCloser,
 
 		fmt.Printf("Writing %v frames...\n", len(collected))
 		for _, tf := range collected {
-			tf.Offset = reader.Header.ReferenceTime.Add(time.Second * time.Duration(tf.Offset)).Sub(referenceTime).Seconds()
+			tf.Offset = reader.Header().ReferenceTime.Add(time.Second * time.Duration(tf.Offset)).Sub(referenceTime).Seconds()
 			err = writer.WriteTimeFrame(tf)
 			if err != nil {
 				return err

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/b1naryth1ef/jambon/acmi"
 	"github.com/b1naryth1ef/jambon/tacview"
 	"github.com/urfave/cli/v2"
 )
@@ -50,13 +51,13 @@ func commandSearch(ctx *cli.Context) error {
 	for _, property := range ctx.StringSlice("property") {
 		parts := strings.SplitN(property, "=", 2)
 		if len(parts) != 2 {
-			return fmt.Errorf("Failed to process property '%v'", property)
+			return fmt.Errorf("failed to process property '%v'", property)
 		}
 		properties[parts[0]] = parts[1]
 	}
 
 	if len(properties) == 0 {
-		return fmt.Errorf("No properties to search for")
+		return fmt.Errorf("no properties to search for")
 	}
 
 	for _, filePath := range ctx.StringSlice("file") {
@@ -67,7 +68,7 @@ func commandSearch(ctx *cli.Context) error {
 			return err
 		}
 
-		reader, err := tacview.NewReader(file)
+		reader, err := acmi.NewReader(file)
 		if err != nil {
 			return err
 		}
@@ -88,8 +89,8 @@ func commandSearch(ctx *cli.Context) error {
 			fmt.Printf("%s\n", string(encoded))
 		} else {
 			for _, result := range results {
-				firstSeenDate := reader.Header.ReferenceTime.Add(time.Second * time.Duration(result.FirstSeen))
-				lastSeenDate := reader.Header.ReferenceTime.Add(time.Second * time.Duration(result.LastSeen))
+				firstSeenDate := reader.Header().ReferenceTime.Add(time.Second * time.Duration(result.FirstSeen))
+				lastSeenDate := reader.Header().ReferenceTime.Add(time.Second * time.Duration(result.LastSeen))
 
 				fmt.Printf(
 					"Object %v\n  First Seen: %v (%v)\n  Last Seen:  %v (%v)\n",
@@ -119,7 +120,7 @@ type searchResult struct {
 	LastSeen  float64         `json:"last_seen"`
 }
 
-func search(concurrency int, reader *tacview.Reader, properties map[string]string) ([]*searchResult, error) {
+func search(concurrency int, reader tacview.Reader, properties map[string]string) ([]*searchResult, error) {
 	done := make(chan struct{})
 	timeFrames := make(chan *tacview.TimeFrame)
 

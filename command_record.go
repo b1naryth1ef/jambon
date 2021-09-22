@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/b1naryth1ef/jambon/acmi"
 	"github.com/b1naryth1ef/jambon/tacview"
 	"github.com/urfave/cli/v2"
 )
@@ -29,12 +30,16 @@ var CommandRecord = cli.Command{
 			Usage: "username to use when connecting to the realtime server",
 			Value: "jambon-record",
 		},
+		&cli.BoolFlag{
+			Name:  "binary-format",
+			Usage: "enable usage of the experimental ACMI binary format",
+		},
 	},
 }
 
 func commandRecord(ctx *cli.Context) error {
 	serverStr := ctx.String("server")
-	if strings.Index(serverStr, ":") == -1 {
+	if !strings.Contains(serverStr, ":") {
 		serverStr = fmt.Sprintf("%s:42674", serverStr)
 	}
 
@@ -48,10 +53,16 @@ func commandRecord(ctx *cli.Context) error {
 		return err
 	}
 
-	writer, err := tacview.NewWriter(outputFile, &reader.Header)
+	var writer tacview.Writer
+	if ctx.Bool("binary-format") {
+		writer, err = acmi.NewWriter(outputFile, reader.Header())
+	} else {
+		writer, err = tacview.NewWriter(outputFile, reader.Header())
+	}
 	if err != nil {
 		return err
 	}
+
 	defer writer.Close()
 
 	data := make(chan *tacview.TimeFrame, 1)

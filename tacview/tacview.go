@@ -51,14 +51,24 @@ type Header struct {
 	InitialTimeFrame TimeFrame
 }
 
+type Reader interface {
+	ProcessTimeFrames(concurrency int, timeFrame chan<- *TimeFrame) error
+	Header() *Header
+}
+
 // Reader provides an interface for reading an ACMI file
-type Reader struct {
-	Header Header
+type reader struct {
+	header Header
 	reader *bufio.Reader
 }
 
+type Writer interface {
+	io.Closer
+	WriteTimeFrame(*TimeFrame) error
+}
+
 // Writer provides an interface for writing an ACMI file
-type Writer struct {
+type writer struct {
 	writer *bufio.Writer
 	closer io.Closer
 }
@@ -90,23 +100,23 @@ func NewTimeFrame() *TimeFrame {
 }
 
 // NewWriter creates a new ACMI writer
-func NewWriter(writer io.WriteCloser, header *Header) (*Writer, error) {
-	w := &Writer{
-		writer: bufio.NewWriter(writer),
-		closer: writer,
+func NewWriter(wr io.WriteCloser, header *Header) (Writer, error) {
+	w := &writer{
+		writer: bufio.NewWriter(wr),
+		closer: wr,
 	}
 	return w, w.writeHeader(header)
 }
 
 // NewReader creates a new ACMI reader
-func NewReader(reader io.Reader) (*Reader, error) {
-	r := &Reader{reader: bufio.NewReader(bom.NewReader(reader))}
+func NewReader(rdr io.Reader) (Reader, error) {
+	r := &reader{reader: bufio.NewReader(bom.NewReader(rdr))}
 	err := r.readHeader()
 	return r, err
 }
 
 // Close closes the writer, flushing any remaining contents
-func (w *Writer) Close() error {
+func (w *writer) Close() error {
 	err := w.writer.Flush()
 	if err != nil {
 		return err
@@ -114,7 +124,7 @@ func (w *Writer) Close() error {
 	return w.closer.Close()
 }
 
-func (w *Writer) writeHeader(header *Header) error {
+func (w *writer) writeHeader(header *Header) error {
 	_, err := w.writer.Write(bomHeader)
 	if err != nil {
 		return err
@@ -124,7 +134,7 @@ func (w *Writer) writeHeader(header *Header) error {
 }
 
 // WriteTimeFrame writes a time frame
-func (w *Writer) WriteTimeFrame(tf *TimeFrame) error {
+func (w *writer) WriteTimeFrame(tf *TimeFrame) error {
 	return tf.Write(w.writer, true)
 }
 
@@ -226,7 +236,11 @@ func (o *Object) Write(writer *bufio.Writer) error {
 	return err
 }
 
-func (r *Reader) parseObject(object *Object, data string) error {
+func (r *reader) Header() *Header {
+	return &r.header
+}
+
+func (r *reader) parseObject(object *Object, data string) error {
 	parts, err := splitPropertyTokens(data)
 	if err != nil {
 		return err
@@ -251,7 +265,7 @@ func (r *Reader) parseObject(object *Object, data string) error {
 //  producing them to an output channel. If your use case requires strong ordering
 //  and you do not wish to implement this guarantee on the consumer side, you must
 //  set the concurrency to 1.
-func (r *Reader) ProcessTimeFrames(concurrency int, timeFrame chan<- *TimeFrame) error {
+func (r *reader) ProcessTimeFrames(concurrency int, timeFrame chan<- *TimeFrame) error {
 	bufferChan := make(chan []byte)
 
 	var wg sync.WaitGroup
@@ -289,7 +303,7 @@ func (r *Reader) ProcessTimeFrames(concurrency int, timeFrame chan<- *TimeFrame)
 	return err
 }
 
-func (r *Reader) timeFrameProducer(buffs chan<- []byte) error {
+func (r *reader) timeFrameProducer(buffs chan<- []byte) error {
 	var buf []byte
 	for {
 		line, err := r.reader.ReadBytes('\n')
@@ -312,12 +326,12 @@ func (r *Reader) timeFrameProducer(buffs chan<- []byte) error {
 	}
 }
 
-func (r *Reader) parseTimeFrame(data []byte, timeFrame *TimeFrame, parseOffset bool) error {
+func (r *reader) parseTimeFrame(data []byte, timeFrame *TimeFrame, parseOffset bool) error {
 	reader := bufio.NewReader(bytes.NewBuffer(data))
 	return r.readTimeFrame(reader, timeFrame, parseOffset)
 }
 
-func (r *Reader) readTimeFrame(reader *bufio.Reader, timeFrame *TimeFrame, parseOffset bool) error {
+func (r *reader) readTimeFrame(reader *bufio.Reader, timeFrame *TimeFrame, parseOffset bool) error {
 	if parseOffset {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -410,7 +424,7 @@ func (r *Reader) readTimeFrame(reader *bufio.Reader, timeFrame *TimeFrame, parse
 	return nil
 }
 
-func (r *Reader) readHeader() error {
+func (r *reader) readHeader() error {
 	foundFileType := false
 	foundFileVersion := false
 
@@ -429,10 +443,10 @@ func (r *Reader) readHeader() error {
 
 		if matches[0][1] == "FileType" && !foundFileType {
 			foundFileType = true
-			r.Header.FileType = matches[0][1]
+			r.header.FileType = matches[0][1]
 		} else if matches[0][1] == "FileVersion" && !foundFileVersion {
 			foundFileVersion = true
-			r.Header.FileVersion = matches[0][2]
+			r.header.FileVersion = matches[0][2]
 		}
 
 		if foundFileType && foundFileVersion {
@@ -440,13 +454,13 @@ func (r *Reader) readHeader() error {
 		}
 	}
 
-	r.Header.InitialTimeFrame = *NewTimeFrame()
-	err := r.readTimeFrame(r.reader, &r.Header.InitialTimeFrame, false)
+	r.header.InitialTimeFrame = *NewTimeFrame()
+	err := r.readTimeFrame(r.reader, &r.header.InitialTimeFrame, false)
 	if err != nil {
 		return err
 	}
 
-	globalObj := r.Header.InitialTimeFrame.Get(0)
+	globalObj := r.header.InitialTimeFrame.Get(0)
 	if globalObj == nil {
 		return fmt.Errorf("No global object found in initial time frame")
 	}
@@ -461,7 +475,140 @@ func (r *Reader) readHeader() error {
 		return fmt.Errorf("Failed to parse ReferenceTime: `%v`", referenceTimeProperty.Value)
 	}
 
-	r.Header.ReferenceTime = referenceTime
+	r.header.ReferenceTime = referenceTime
 
 	return nil
+}
+
+type ObjectPosition struct {
+	Longitude float64
+	Latitude  float64
+	Altitude  float64
+	U         float64
+	V         float64
+	Roll      float64
+	Pitch     float64
+	Yaw       float64
+	Heading   float32
+}
+
+func ReadObjectPosition(data string) (ObjectPosition, error) {
+	var result ObjectPosition
+	parts := strings.Split(data, "|")
+
+	if len(parts) >= 3 {
+		if parts[0] != "" {
+			lng, err := strconv.ParseFloat(parts[0], 64)
+			if err != nil {
+				return result, err
+			}
+			result.Longitude = lng
+		}
+
+		if parts[1] != "" {
+			lat, err := strconv.ParseFloat(parts[1], 64)
+			if err != nil {
+				return result, err
+			}
+			result.Latitude = lat
+		}
+
+		if parts[2] != "" {
+			alt, err := strconv.ParseFloat(parts[2], 64)
+			if err != nil {
+				return result, err
+			}
+			result.Altitude = alt
+		}
+
+		if len(parts) == 5 {
+			if parts[3] != "" {
+				u, err := strconv.ParseFloat(parts[3], 64)
+				if err != nil {
+					return result, err
+				}
+				result.U = u
+			}
+			if parts[4] != "" {
+				v, err := strconv.ParseFloat(parts[4], 64)
+				if err != nil {
+					return result, err
+				}
+				result.V = v
+
+			}
+		}
+
+		if len(parts) == 6 {
+			if parts[3] != "" {
+				roll, err := strconv.ParseFloat(parts[3], 64)
+				if err != nil {
+					return result, err
+				}
+				result.Roll = roll
+			}
+			if parts[4] != "" {
+				pitch, err := strconv.ParseFloat(parts[4], 64)
+				if err != nil {
+					return result, err
+				}
+				result.Pitch = pitch
+			}
+			if parts[5] != "" {
+				yaw, err := strconv.ParseFloat(parts[5], 64)
+				if err != nil {
+					return result, err
+				}
+				result.Yaw = yaw
+			}
+		}
+
+		if len(parts) == 9 {
+			if parts[3] != "" {
+				roll, err := strconv.ParseFloat(parts[3], 64)
+				if err != nil {
+					return result, err
+				}
+				result.Roll = roll
+			}
+			if parts[4] != "" {
+				pitch, err := strconv.ParseFloat(parts[4], 64)
+				if err != nil {
+					return result, err
+				}
+				result.Pitch = pitch
+			}
+			if parts[5] != "" {
+				yaw, err := strconv.ParseFloat(parts[5], 64)
+				if err != nil {
+					return result, err
+				}
+				result.Yaw = yaw
+			}
+			if parts[6] != "" {
+				u, err := strconv.ParseFloat(parts[6], 64)
+				if err != nil {
+					return result, err
+				}
+				result.U = u
+			}
+			if parts[7] != "" {
+				v, err := strconv.ParseFloat(parts[7], 64)
+				if err != nil {
+					return result, err
+				}
+				result.V = v
+
+			}
+			if parts[8] != "" {
+				heading, err := strconv.ParseFloat(parts[8], 32)
+				if err != nil {
+					return result, err
+				}
+				result.Heading = float32(heading)
+			}
+		}
+	}
+
+	return result, nil
 }

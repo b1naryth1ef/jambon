@@ -26,7 +26,7 @@ func openReadableTacView(path string) (io.ReadCloser, error) {
 		}
 
 		if len(reader.File) != 1 {
-			return nil, fmt.Errorf("Too many entries in zip file, is it a valid tacview ACMI?")
+			return nil, fmt.Errorf("too many entries in zip file, is it a valid tacview ACMI?")
 		}
 
 		return reader.Open(reader.File[0].Name)

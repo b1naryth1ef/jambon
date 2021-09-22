@@ -20,7 +20,7 @@ func NewJambonNoopProcessor(dest io.WriteCloser) *JambonNoopProcessor {
 	return &JambonNoopProcessor{dest: dest}
 }
 
-func (j *JambonNoopProcessor) ProcessFile(source *tacview.Reader) error {
+func (j *JambonNoopProcessor) ProcessFile(source tacview.Reader) error {
 	done := make(chan struct{})
 	timeFrames := make(chan *tacview.TimeFrame)
 
@@ -51,7 +51,7 @@ func (j *JambonNoopProcessor) ProcessFile(source *tacview.Reader) error {
 		return collected[i].Offset < collected[j].Offset
 	})
 
-	writer, err := tacview.NewWriter(j.dest, &source.Header)
+	writer, err := tacview.NewWriter(j.dest, source.Header())
 	if err != nil {
 		return err
 	}

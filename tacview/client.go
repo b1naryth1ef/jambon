@@ -8,7 +8,7 @@ import (
 )
 
 /// Creates a new Reader from a TacView Real Time server
-func NewRealTimeReader(connStr string, username string) (*Reader, error) {
+func NewRealTimeReader(connStr string, username string) (Reader, error) {
 	conn, err := net.Dial("tcp", connStr)
 	if err != nil {
 		return nil, err
