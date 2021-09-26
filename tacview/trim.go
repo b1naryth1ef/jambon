@@ -2,7 +2,6 @@ package tacview
 
 import (
 	"io"
-	"log"
 	"time"
 )
 
@@ -11,7 +10,6 @@ func TrimRaw(reader RawReader, writer RawWriter, start, end float64) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("Header %v", header)
 
 	aliveObjects := make(map[uint64]*Object)
 
@@ -45,7 +43,6 @@ func TrimRaw(reader RawReader, writer RawWriter, start, end float64) error {
 		}
 	}
 
-	log.Printf("%v pre-start objects", len(aliveObjects))
 	referenceTime := header.ReferenceTime.Add(time.Second * time.Duration(start))
 
 	// We copy the initial time frame completely
