@@ -16,7 +16,6 @@ import (
 )
 
 var bomHeader = []byte{0xef, 0xbb, 0xbf}
-var objectLineRe = regexp.MustCompile(`^(-?[0-9a-fA-F]+)(?:,((?:.|\n)*)+)?`)
 var keyRe = regexp.MustCompilePOSIX("^(.*)=(.*)$")
 
 func splitPropertyTokens(s string) (tokens []string, err error) {
@@ -227,9 +226,17 @@ func (o *Object) Write(writer *bufio.Writer) error {
 }
 
 func (r *Reader) parseObject(object *Object, data string) error {
-	parts, err := splitPropertyTokens(data)
-	if err != nil {
-		return err
+	var parts []string
+
+	if strings.Contains(data, `\,`) {
+		var err error
+		parts, err = splitPropertyTokens(data)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Fast-er path
+		parts = strings.Split(data, ",")
 	}
 
 	for _, part := range parts {
@@ -364,15 +371,9 @@ func (r *Reader) readTimeFrame(reader *bufio.Reader, timeFrame *TimeFrame, parse
 			buffer = buffer[:len(buffer)-1] + "\n"
 		}
 
-		rawLineParts := objectLineRe.FindAllStringSubmatch(buffer, -1)
-		if len(rawLineParts) != 1 {
-			return fmt.Errorf("Failed to parse line: `%v` (%v)", buffer, len(rawLineParts))
-		}
-
-		lineParts := rawLineParts[0]
-
-		if lineParts[1][0] == '-' {
-			objectId, err := strconv.ParseUint(lineParts[1][1:], 16, 64)
+		lineParts := strings.SplitN(buffer, ",", 2)
+		if lineParts[0][0] == '-' {
+			objectId, err := strconv.ParseUint(lineParts[0][1:], 16, 64)
 			if err != nil {
 				return err
 			}
@@ -385,7 +386,7 @@ func (r *Reader) readTimeFrame(reader *bufio.Reader, timeFrame *TimeFrame, parse
 				timeFrame.Objects = append(timeFrame.Objects, object)
 			}
 		} else {
-			objectId, err := strconv.ParseUint(lineParts[1], 16, 64)
+			objectId, err := strconv.ParseUint(lineParts[0], 16, 64)
 			if err != nil {
 				return err
 			}
@@ -399,7 +400,7 @@ func (r *Reader) readTimeFrame(reader *bufio.Reader, timeFrame *TimeFrame, parse
 				timeFrame.Objects = append(timeFrame.Objects, object)
 			}
 
-			err = r.parseObject(object, lineParts[2])
+			err = r.parseObject(object, lineParts[1])
 			if err != nil {
 				return err
 			}
