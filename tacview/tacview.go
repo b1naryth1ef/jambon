@@ -16,7 +16,6 @@ import (
 )
 
 var bomHeader = []byte{0xef, 0xbb, 0xbf}
-var objectLineRe = regexp.MustCompile(`^(-?[0-9a-fA-F]+)(?:,((?:.|\n)*)+)?`)
 var keyRe = regexp.MustCompilePOSIX("^(.*)=(.*)$")
 
 func splitPropertyTokens(s string) (tokens []string, err error) {
@@ -69,6 +68,12 @@ type TimeFrame struct {
 	Objects []*Object
 }
 
+// RawTimeFrame represents a raw time frame that has not been parsed yet
+type RawTimeFrame struct {
+	Offset   float64
+	Contents []string
+}
+
 // Property represents an object property
 type Property struct {
 	Key   string
@@ -80,6 +85,21 @@ type Object struct {
 	Id         uint64
 	Properties []*Property
 	Deleted    bool
+}
+
+func (r *RawTimeFrame) Parse() (*TimeFrame, error) {
+	timeFrame := NewTimeFrame()
+	timeFrame.Offset = r.Offset
+	for _, line := range r.Contents {
+		object, err := parseObjectLine(line)
+		if err != nil {
+			return nil, err
+		}
+
+		timeFrame.Objects = append(timeFrame.Objects, object)
+	}
+
+	return timeFrame, nil
 }
 
 // NewTimeFrame creates an empty TimeFrame
@@ -174,6 +194,20 @@ func (tf *TimeFrame) Write(writer *bufio.Writer, includeOffset bool) error {
 	return nil
 }
 
+func (tf *TimeFrame) ToRaw() *RawTimeFrame {
+	lines := make([]string, len(tf.Objects))
+	idx := 0
+	for _, object := range tf.Objects {
+		lines[idx] = object.Serialize()
+		idx += 1
+	}
+
+	return &RawTimeFrame{
+		Offset:   tf.Offset,
+		Contents: lines,
+	}
+}
+
 // Set updates the given property
 func (o *Object) Set(key string, value string) {
 	for _, property := range o.Properties {
@@ -193,6 +227,23 @@ func (o *Object) Get(key string) *Property {
 		}
 	}
 	return nil
+}
+
+func (o *Object) Serialize() string {
+	if o.Deleted {
+		return fmt.Sprintf("-%x", o.Id)
+	}
+
+	var buffer []string
+	for _, property := range o.Properties {
+		buffer = append(buffer, fmt.Sprintf(
+			"%s=%s",
+			property.Key,
+			strings.Replace(strings.Replace(property.Value, "\n", "\\\n", -1), ",", "\\,", -1)),
+		)
+	}
+
+	return fmt.Sprintf("%x,%s", o.Id, strings.Join(buffer, ","))
 }
 
 func (o *Object) Write(writer *bufio.Writer) error {
@@ -227,9 +278,17 @@ func (o *Object) Write(writer *bufio.Writer) error {
 }
 
 func (r *Reader) parseObject(object *Object, data string) error {
-	parts, err := splitPropertyTokens(data)
-	if err != nil {
-		return err
+	var parts []string
+
+	if strings.Contains(data, `\,`) {
+		var err error
+		parts, err = splitPropertyTokens(data)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Fast-er path
+		parts = strings.Split(data, ",")
 	}
 
 	for _, part := range parts {
@@ -364,15 +423,9 @@ func (r *Reader) readTimeFrame(reader *bufio.Reader, timeFrame *TimeFrame, parse
 			buffer = buffer[:len(buffer)-1] + "\n"
 		}
 
-		rawLineParts := objectLineRe.FindAllStringSubmatch(buffer, -1)
-		if len(rawLineParts) != 1 {
-			return fmt.Errorf("Failed to parse line: `%v` (%v)", buffer, len(rawLineParts))
-		}
-
-		lineParts := rawLineParts[0]
-
-		if lineParts[1][0] == '-' {
-			objectId, err := strconv.ParseUint(lineParts[1][1:], 16, 64)
+		lineParts := strings.SplitN(buffer, ",", 2)
+		if lineParts[0][0] == '-' {
+			objectId, err := strconv.ParseUint(lineParts[0][1:], 16, 64)
 			if err != nil {
 				return err
 			}
@@ -385,7 +438,7 @@ func (r *Reader) readTimeFrame(reader *bufio.Reader, timeFrame *TimeFrame, parse
 				timeFrame.Objects = append(timeFrame.Objects, object)
 			}
 		} else {
-			objectId, err := strconv.ParseUint(lineParts[1], 16, 64)
+			objectId, err := strconv.ParseUint(lineParts[0], 16, 64)
 			if err != nil {
 				return err
 			}
@@ -399,7 +452,7 @@ func (r *Reader) readTimeFrame(reader *bufio.Reader, timeFrame *TimeFrame, parse
 				timeFrame.Objects = append(timeFrame.Objects, object)
 			}
 
-			err = r.parseObject(object, lineParts[2])
+			err = r.parseObject(object, lineParts[1])
 			if err != nil {
 				return err
 			}

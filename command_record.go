@@ -33,17 +33,17 @@ var CommandRecord = cli.Command{
 }
 
 func commandRecord(ctx *cli.Context) error {
-	outputFile, err := openWritableTacView(ctx.Path("output"))
-	if err != nil {
-		return err
-	}
-
 	serverStr := ctx.String("server")
 	if strings.Index(serverStr, ":") == -1 {
 		serverStr = fmt.Sprintf("%s:42674", serverStr)
 	}
 
 	reader, err := tacview.NewRealTimeReader(serverStr, ctx.String("username"))
+	if err != nil {
+		return err
+	}
+
+	outputFile, err := openWritableTacView(ctx.Path("output"))
 	if err != nil {
 		return err
 	}
