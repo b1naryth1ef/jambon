@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"hash/crc64"
 	"net"
 )
 
 /// Creates a new Reader from a TacView Real Time server
-func NewRealTimeReader(connStr string, username string) (*Reader, error) {
+func NewRealTimeReader(connStr string, username string, password string) (*Reader, error) {
 	conn, err := net.Dial("tcp", connStr)
 	if err != nil {
 		return nil, err
@@ -55,9 +56,27 @@ func NewRealTimeReader(connStr string, username string) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = conn.Write([]byte(fmt.Sprintf("Client %s\n\x00\n", username)))
+	_, err = conn.Write([]byte(fmt.Sprintf("Client %s\n", username)))
 	if err != nil {
 		return nil, err
+	}
+
+	if password != "" {
+		hasher := crc64.New(crc64.MakeTable(crc64.ECMA))
+		_, err = hasher.Write([]byte(password))
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = conn.Write([]byte(fmt.Sprintf("%d\x00\n", hasher.Sum64())))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		_, err = conn.Write([]byte("\x00\n"))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return NewReader(reader)

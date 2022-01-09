@@ -29,6 +29,11 @@ var CommandRecord = cli.Command{
 			Usage: "username to use when connecting to the realtime server",
 			Value: "jambon-record",
 		},
+		&cli.StringFlag{
+			Name:  "password",
+			Usage: "password to use when connecting to the realtime server",
+			Value: "",
+		},
 	},
 }
 
@@ -38,7 +43,7 @@ func commandRecord(ctx *cli.Context) error {
 		serverStr = fmt.Sprintf("%s:42674", serverStr)
 	}
 
-	reader, err := tacview.NewRealTimeReader(serverStr, ctx.String("username"))
+	reader, err := tacview.NewRealTimeReader(serverStr, ctx.String("username"), ctx.String("password"))
 	if err != nil {
 		return err
 	}
