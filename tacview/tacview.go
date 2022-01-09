@@ -68,6 +68,12 @@ type TimeFrame struct {
 	Objects []*Object
 }
 
+// RawTimeFrame represents a raw time frame that has not been parsed yet
+type RawTimeFrame struct {
+	Offset   float64
+	Contents []string
+}
+
 // Property represents an object property
 type Property struct {
 	Key   string
@@ -79,6 +85,21 @@ type Object struct {
 	Id         uint64
 	Properties []*Property
 	Deleted    bool
+}
+
+func (r *RawTimeFrame) Parse() (*TimeFrame, error) {
+	timeFrame := NewTimeFrame()
+	timeFrame.Offset = r.Offset
+	for _, line := range r.Contents {
+		object, err := parseObjectLine(line)
+		if err != nil {
+			return nil, err
+		}
+
+		timeFrame.Objects = append(timeFrame.Objects, object)
+	}
+
+	return timeFrame, nil
 }
 
 // NewTimeFrame creates an empty TimeFrame
@@ -173,6 +194,20 @@ func (tf *TimeFrame) Write(writer *bufio.Writer, includeOffset bool) error {
 	return nil
 }
 
+func (tf *TimeFrame) ToRaw() *RawTimeFrame {
+	lines := make([]string, len(tf.Objects))
+	idx := 0
+	for _, object := range tf.Objects {
+		lines[idx] = object.Serialize()
+		idx += 1
+	}
+
+	return &RawTimeFrame{
+		Offset:   tf.Offset,
+		Contents: lines,
+	}
+}
+
 // Set updates the given property
 func (o *Object) Set(key string, value string) {
 	for _, property := range o.Properties {
@@ -192,6 +227,23 @@ func (o *Object) Get(key string) *Property {
 		}
 	}
 	return nil
+}
+
+func (o *Object) Serialize() string {
+	if o.Deleted {
+		return fmt.Sprintf("-%x", o.Id)
+	}
+
+	var buffer []string
+	for _, property := range o.Properties {
+		buffer = append(buffer, fmt.Sprintf(
+			"%s=%s",
+			property.Key,
+			strings.Replace(strings.Replace(property.Value, "\n", "\\\n", -1), ",", "\\,", -1)),
+		)
+	}
+
+	return fmt.Sprintf("%x,%s", o.Id, strings.Join(buffer, ","))
 }
 
 func (o *Object) Write(writer *bufio.Writer) error {
