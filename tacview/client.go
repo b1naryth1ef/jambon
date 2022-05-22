@@ -42,14 +42,17 @@ func hashPassword64(password string) string {
 func NewRealTimeReader(connStr string, username string, password string) (*Reader, error) {
 	reader, err := newRealTimeReaderHash(connStr, username, password, hashPassword64)
 
-	if err == io.EOF {
+	if err == io.EOF && password != "" {
 		reader, err = newRealTimeReaderHash(connStr, username, password, hashPassword32)
+		if err == io.EOF {
+			err = errors.New("EOF (possible incorrect password)")
+		}
 	}
 
 	return reader, err
 }
 
-func newRealTimeReaderHash(connStr string, username string, password string, hasher func(string) string) (*Reader, error) {
+func newRealTimeReaderHash(connStr string, username string, password string, hashFunc func(string) string) (*Reader, error) {
 	conn, err := net.Dial("tcp", connStr)
 	if err != nil {
 		return nil, err
@@ -101,8 +104,8 @@ func newRealTimeReaderHash(connStr string, username string, password string, has
 		return nil, err
 	}
 
-	hash := hashPassword64(password)
-	_, err = conn.Write([]byte(fmt.Sprintf("%x\x00", hash)))
+	hash := hashFunc(password)
+	_, err = conn.Write([]byte(fmt.Sprintf("%s\x00", hash)))
 	if err != nil {
 		return nil, err
 	}
