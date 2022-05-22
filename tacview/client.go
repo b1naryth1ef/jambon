@@ -5,8 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc64"
+	"math/bits"
 	"net"
+	"unicode/utf16"
 )
+
+func hashPassword(password string) uint64 {
+	password_utf16 := utf16.Encode([]rune(password))
+
+	password_bytes := make([]byte, 2*len(password_utf16))
+	for i, r := range password_utf16 {
+		password_bytes[2*i+0] = bits.Reverse8(byte(r >> 0))
+		password_bytes[2*i+1] = bits.Reverse8(byte(r >> 8))
+	}
+
+	hash := crc64.Checksum(password_bytes, crc64.MakeTable(crc64.ECMA))
+	return bits.Reverse64(hash)
+}
 
 /// Creates a new Reader from a TacView Real Time server
 func NewRealTimeReader(connStr string, username string, password string) (*Reader, error) {
@@ -62,13 +77,9 @@ func NewRealTimeReader(connStr string, username string, password string) (*Reade
 	}
 
 	if password != "" {
-		hasher := crc64.New(crc64.MakeTable(crc64.ECMA))
-		_, err = hasher.Write([]byte(password))
-		if err != nil {
-			return nil, err
-		}
+		hash := hashPassword(password)
 
-		_, err = conn.Write([]byte(fmt.Sprintf("%d\x00\n", hasher.Sum64())))
+		_, err = conn.Write([]byte(fmt.Sprintf("%x\x00\n", hash)))
 		if err != nil {
 			return nil, err
 		}
